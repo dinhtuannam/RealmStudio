@@ -107,7 +107,11 @@ const FORMAT_HANDLERS = {
   excel: { ext: 'xls', build: toExcelXml },
 };
 
-function exportObjects(className, filter, format) {
+// Ham dung chung, nhan targetDir tuong minh - exportObjects() (export 1
+// table, luon ghi vao EXPORT_DIR) va exportSchema() (export ca schema, co
+// the ghi vao 1 thu muc con) deu goi qua day, tranh trung logic build
+// content/tao ten file.
+function exportObjectsToDir(targetDir, className, filter, format) {
   const handler = FORMAT_HANDLERS[format];
   if (!handler) {
     const err = new Error(`Format "${format}" không được hỗ trợ. Chỉ hỗ trợ: csv, excel, markdown.`);
@@ -119,12 +123,47 @@ function exportObjects(className, filter, format) {
   const { rows, schema } = realmService.listObjects(className, filter, 0, Infinity);
   const content = handler.build(schema.properties, rows);
 
-  fs.mkdirSync(EXPORT_DIR, { recursive: true });
+  fs.mkdirSync(targetDir, { recursive: true });
   const fileName = `${sanitizeForFilename(className)}_${timestampForFilename(new Date())}.${handler.ext}`;
-  const filePath = path.join(EXPORT_DIR, fileName);
+  const filePath = path.join(targetDir, fileName);
   fs.writeFileSync(filePath, content, 'utf8');
 
   return { fileName, filePath, rowCount: rows.length };
 }
 
-module.exports = { exportObjects, EXPORT_DIR };
+function exportObjects(className, filter, format) {
+  return exportObjectsToDir(EXPORT_DIR, className, filter, format);
+}
+
+const SCHEMA_EXPORT_FORMATS = new Set(['csv', 'markdown']);
+
+// Export TAT CA table trong schema dang mo, moi table 1 file, vao
+// EXPORT_DIR (folderName rong) hoac EXPORT_DIR/<folderName> (co nhap).
+// sanitizeForFilename() da thay moi ky tu ngoai [a-zA-Z0-9_-] (gom ca '/',
+// '\', '.') thanh '_' nen tu dong triet tieu path traversal, khong can
+// logic rieng. 1 table loi khong chan cac table con lai.
+function exportSchema(folderName, format) {
+  if (!SCHEMA_EXPORT_FORMATS.has(format)) {
+    const err = new Error(`Format "${format}" không được hỗ trợ khi export toàn bộ schema. Chỉ hỗ trợ: csv, markdown.`);
+    err.statusCode = 400;
+    throw err;
+  }
+  const trimmed = (folderName || '').trim();
+  const resolvedDir = trimmed ? path.join(EXPORT_DIR, sanitizeForFilename(trimmed)) : EXPORT_DIR;
+
+  const schema = realmService.getSchema();
+  const results = [];
+  for (const cls of schema) {
+    try {
+      const { fileName, rowCount } = exportObjectsToDir(resolvedDir, cls.name, '', format);
+      results.push({ className: cls.name, fileName, rowCount, ok: true });
+    } catch (e) {
+      results.push({ className: cls.name, ok: false, error: e.message });
+    }
+  }
+
+  const successCount = results.filter((r) => r.ok).length;
+  return { resolvedDir, results, successCount, failCount: results.length - successCount };
+}
+
+module.exports = { exportObjects, exportSchema, EXPORT_DIR };

@@ -189,6 +189,28 @@ test('HTTP API end-to-end: open, schema, CRUD qua HTTP that su', async (t) => {
   assert.equal(badFolderScanRes.status, 400);
   assert.equal(badFolderScanBody.ok, false);
 
+  const exportSchemaRes = await fetch(`${base}/api/export/schema`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folder: 'MJDL211-e2e', format: 'csv' }),
+  });
+  const exportSchemaBody = await exportSchemaRes.json();
+  assert.equal(exportSchemaRes.status, 200);
+  assert.equal(exportSchemaBody.ok, true);
+  assert.equal(exportSchemaBody.data.successCount, 2);
+  const exportedSchemaDir = exportSchemaBody.data.resolvedDir;
+  assert.ok(fs.existsSync(exportedSchemaDir), 'thu muc con phai duoc tao that tren dia');
+  fs.rmSync(exportedSchemaDir, { recursive: true, force: true });
+
+  const badExportSchemaFormatRes = await fetch(`${base}/api/export/schema`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folder: '', format: 'excel' }),
+  });
+  const badExportSchemaFormatBody = await badExportSchemaFormatRes.json();
+  assert.equal(badExportSchemaFormatRes.status, 400);
+  assert.equal(badExportSchemaFormatBody.ok, false);
+
   const wrongOpenRes = await fetch(`${base}/api/open`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

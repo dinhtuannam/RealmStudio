@@ -78,6 +78,11 @@ router.post('/import/folder/execute', handle(async (req) => {
   return importService.executeImportFolder(resolvedPath, matched, mode);
 }));
 
+router.post('/export/schema', handle(async (req) => {
+  const { folder, format } = req.body || {};
+  return exportService.exportSchema(folder, format);
+}));
+
 router.post('/objects/:className', handle(async (req) => {
   return realmService.createObject(req.params.className, req.body || {});
 }));

@@ -145,11 +145,20 @@ test/
                         Test thật (KHÔNG mock Realm) — mở file .realm tạm
                         thật, gọi qua src/*.js hoặc qua HTTP thật (e2e.test.js
                         dùng createApp() + fetch thật). `npm test` = `node
-                        --test --test-force-exit test/*.test.js`. Cần
-                        `--test-force-exit` vì realm-js giữ process sống sau
-                        khi dùng xong (native handle), không tự thoát —
-                        THIẾU flag này thì `npm test` treo vô thời hạn. Chỉ
-                        quét `test/*.test.js` (không quét cả node_modules).
+                        --test --test-concurrency=1 --test-force-exit
+                        test/*.test.js`. Cần `--test-force-exit` vì realm-js
+                        giữ process sống sau khi dùng xong (native handle),
+                        không tự thoát — THIẾU flag này thì `npm test` treo
+                        vô thời hạn. Cần `--test-concurrency=1` (ép chạy TUẦN
+                        TỰ từng file, mặc định Node chạy nhiều file test SONG
+                        SONG) vì `exportService.test.js` và `e2e.test.js` đều
+                        ghi file export cùng table (`Person`/`Note`) thẳng vào
+                        `exports/` — tên file chỉ có độ chính xác tới GIÂY
+                        (`{table}_yyyymmdd_hhmmss.ext`), nên chạy song song có
+                        thể đụng tên file, 1 test dọn dẹp (`rmSync`) đè lên
+                        file test kia đang cần → lỗi ENOENT ngẫu nhiên (đã gặp
+                        thật khi thêm test cho `exportSchema`). Chỉ quét
+                        `test/*.test.js` (không quét cả node_modules).
 
 docs/superpowers/       Spec/plan cũ từ giai đoạn brainstorm/build ban đầu và
                         giai đoạn redesign UI. Tham khảo lịch sử quyết định

@@ -8,6 +8,26 @@
 
 const EXPORT_SCOPE_IDS = { current: 'export-scope-current', all: 'export-scope-all' };
 const EXPORT_FORMAT_IDS = { csv: 'export-format-csv', excel: 'export-format-excel', markdown: 'export-format-markdown' };
+const EXPORT_TARGET_IDS = { table: 'export-target-table', schema: 'export-target-schema' };
+
+function applyExportTargetVisibility() {
+  const target = getCheckedRadioValue(EXPORT_TARGET_IDS, 'table');
+  el('export-table-scope-block').hidden = target !== 'table';
+  el('export-schema-folder-block').hidden = target !== 'schema';
+  el('export-format-excel-option').hidden = target === 'schema';
+  if (target === 'schema' && el(EXPORT_FORMAT_IDS.excel).checked) {
+    el(EXPORT_FORMAT_IDS.excel).checked = false;
+    el(EXPORT_FORMAT_IDS.csv).checked = true;
+  }
+  // Doi Pham vi (theo bat ky huong nao) luon xoa ket qua cu dang hien -
+  // tranh nham lan voi ket qua cua lan export truoc.
+  el('export-schema-result').hidden = true;
+  el('export-schema-result').innerHTML = '';
+}
+
+document.querySelectorAll('input[name="export-target"]').forEach((radio) => {
+  radio.addEventListener('change', applyExportTargetVisibility);
+});
 
 el('export-data').addEventListener('click', () => {
   if (!state.currentClass) return;
@@ -20,6 +40,17 @@ el('export-data').addEventListener('click', () => {
   // "Dữ liệu hiện tại" vì đó là thứ người dùng đang thực sự nhìn thấy.
   currentRadio.checked = hasFilter;
   allRadio.checked = !hasFilter;
+  el(EXPORT_TARGET_IDS.table).checked = true;
+  el(EXPORT_TARGET_IDS.schema).checked = false;
+  applyExportTargetVisibility();
+  el('export-overlay').hidden = false;
+});
+
+el('open-export-schema').addEventListener('click', () => {
+  el(EXPORT_TARGET_IDS.schema).checked = true;
+  el(EXPORT_TARGET_IDS.table).checked = false;
+  el('export-schema-folder').value = '';
+  applyExportTargetVisibility();
   el('export-overlay').hidden = false;
 });
 
@@ -32,15 +63,45 @@ el('export-overlay').addEventListener('click', (e) => {
 });
 
 el('export-confirm').addEventListener('click', async () => {
-  const scope = getCheckedRadioValue(EXPORT_SCOPE_IDS, 'all');
+  const target = getCheckedRadioValue(EXPORT_TARGET_IDS, 'table');
+
+  if (target === 'table') {
+    const scope = getCheckedRadioValue(EXPORT_SCOPE_IDS, 'all');
+    const format = getCheckedRadioValue(EXPORT_FORMAT_IDS, 'csv');
+    const filter = scope === 'current' ? state.filter : '';
+    const btn = el('export-confirm');
+    btn.disabled = true;
+    try {
+      const result = await api('POST', `/api/objects/${encodeURIComponent(state.currentClass)}/export`, { filter, format });
+      el('export-overlay').hidden = true;
+      showToast(`Đã export thành công: ${result.fileName} (${result.rowCount} record).`);
+    } catch (err) {
+      showError(`Export thất bại: ${err.message}`);
+    } finally {
+      btn.disabled = false;
+    }
+    return;
+  }
+
+  // target === 'schema' - export moi table trong schema, khong phu thuoc
+  // state.currentClass, khong can confirm dialog vi day la thao tac doc,
+  // khong dung toi/xoa du lieu nguon.
+  const folder = el('export-schema-folder').value.trim();
   const format = getCheckedRadioValue(EXPORT_FORMAT_IDS, 'csv');
-  const filter = scope === 'current' ? state.filter : '';
   const btn = el('export-confirm');
   btn.disabled = true;
   try {
-    const result = await api('POST', `/api/objects/${encodeURIComponent(state.currentClass)}/export`, { filter, format });
-    el('export-overlay').hidden = true;
-    showToast(`Đã export thành công: ${result.fileName} (${result.rowCount} record).`);
+    const result = await api('POST', '/api/export/schema', { folder, format });
+    const rows = result.results.map((r) => {
+      const status = r.ok
+        ? `<span class="table-name">✓ ${r.rowCount} record</span>`
+        : `<span class="table-name">✗ ${escapeHtml(r.error)}</span>`;
+      return `<div class="export-schema-result-row ${r.ok ? 'ok' : 'fail'}"><span class="table-name">${escapeHtml(r.className)}</span>${status}</div>`;
+    });
+    const destLabel = folder ? `exports/${folder}` : 'exports/';
+    el('export-schema-result').innerHTML = `<h3>Đã lưu vào ${escapeHtml(destLabel)} (${result.successCount} thành công / ${result.failCount} lỗi)</h3>${rows.join('')}`;
+    el('export-schema-result').hidden = false;
+    showToast(`Đã export ${result.successCount}/${result.results.length} table vào ${destLabel}.`);
   } catch (err) {
     showError(`Export thất bại: ${err.message}`);
   } finally {

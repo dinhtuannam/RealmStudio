@@ -33,12 +33,17 @@
   <main>
     <aside id="sidebar">
       <div id="sidebar-header">
-        <button type="button" id="toggle-sidebar" class="icon-btn" title="Thu gọn/mở rộng danh sách table">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        </button>
-        <button type="button" id="open-import-folder" class="icon-btn icon-btn-import" title="Import từ thư mục (không cần chọn table trước)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        </button>
+        <div class="sidebar-header-actions">
+          <button type="button" id="toggle-sidebar" class="icon-btn" title="Thu gọn/mở rộng danh sách table">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <button type="button" id="open-import-folder" class="icon-btn icon-btn-import" title="Import từ thư mục (không cần chọn table trước)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </button>
+          <button type="button" id="open-export-schema" class="icon-btn icon-btn-export" title="Export toàn bộ schema (không cần chọn table trước)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>
+        </div>
         <div class="search-wrap">
           <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" id="class-search" placeholder="Tìm table theo tên..." autocomplete="off" />
@@ -166,6 +171,17 @@
     <div class="dialog-card">
       <h2>Export dữ liệu</h2>
       <div class="field">
+        <label class="field-title">Phạm vi</label>
+        <label class="radio-option">
+          <input type="radio" name="export-target" id="export-target-table" value="table" checked />
+          1 table
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="export-target" id="export-target-schema" value="schema" />
+          Toàn bộ schema
+        </label>
+      </div>
+      <div class="field" id="export-table-scope-block">
         <label class="field-title">Phạm vi dữ liệu</label>
         <label class="radio-option">
           <input type="radio" name="export-scope" id="export-scope-current" value="current" />
@@ -176,13 +192,17 @@
           Toàn bộ dữ liệu
         </label>
       </div>
+      <div class="field" id="export-schema-folder-block" hidden>
+        <label class="field-title" for="export-schema-folder">Tên thư mục con <span class="field-hint">(để trống = xuất thẳng vào exports/)</span></label>
+        <input type="text" id="export-schema-folder" placeholder="vd: MJDL211" autocomplete="off" />
+      </div>
       <div class="field">
         <label class="field-title">Format</label>
         <label class="radio-option">
           <input type="radio" name="export-format" id="export-format-csv" value="csv" checked />
           CSV
         </label>
-        <label class="radio-option">
+        <label class="radio-option" id="export-format-excel-option">
           <input type="radio" name="export-format" id="export-format-excel" value="excel" />
           Excel
         </label>
@@ -191,6 +211,7 @@
           Markdown
         </label>
       </div>
+      <div id="export-schema-result" class="export-schema-result" hidden></div>
       <div class="edit-actions">
         <button type="button" id="export-cancel" class="btn btn-ghost">Hủy</button>
         <button type="button" id="export-confirm" class="btn btn-primary">Export</button>

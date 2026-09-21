@@ -322,8 +322,11 @@ html.connected main { flex: 1 1 auto; }
 }
 #sidebar.collapsed { flex-basis: 44px; }
 #sidebar.collapsed .search-wrap,
-#sidebar.collapsed #class-list { display: none; }
-#sidebar-header { flex: 0 0 auto; display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--border); }
+#sidebar.collapsed #class-list,
+#sidebar.collapsed #open-import-folder,
+#sidebar.collapsed #open-export-schema { display: none; }
+#sidebar-header { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-bottom: 1px solid var(--border); }
+.sidebar-header-actions { display: flex; gap: 6px; }
 #class-list { flex: 1; overflow-y: auto; min-height: 0; padding: 6px; }
 
 .class-item {
@@ -785,3 +788,28 @@ tr.row-highlight { animation: row-highlight-fade 3s ease-in; }
 .import-folder-result-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
 .import-folder-result-row.ok .table-name { color: var(--success); }
 .import-folder-result-row.fail .table-name { color: var(--danger); }
+
+/* ---------- Export schema (entry point sidebar + result list) ---------- */
+.icon-btn-export { color: var(--export); }
+.icon-btn-export:hover { background: var(--export-soft); border-color: var(--export); box-shadow: 0 0 10px var(--export-border); }
+
+.export-schema-result {
+  margin-top: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.export-schema-result h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin: 0 0 6px;
+}
+.export-schema-result-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.export-schema-result-row .table-name { color: var(--text); font-weight: 500; }
+.export-schema-result-row.ok .table-name { color: var(--success); }
+.export-schema-result-row.fail .table-name { color: var(--danger); }
