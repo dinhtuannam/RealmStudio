@@ -49,6 +49,88 @@ el('export-confirm').addEventListener('click', async () => {
 });
 
 const IMPORT_MODE_IDS = { append: 'import-mode-append', overwrite: 'import-mode-overwrite' };
+const IMPORT_SOURCE_IDS = { file: 'import-source-file', folder: 'import-source-folder' };
+
+// Ket qua lan Quet gan nhat (null = chua Quet, hoac da bi invalidate do doi
+// duong dan/nguon sau khi Quet). import-confirm o che do Folder chi bat khi
+// bien nay khac null va co it nhat 1 table matched.
+let folderScanResult = null;
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderImportFolderPreview() {
+  const container = el('import-folder-preview');
+  if (!folderScanResult) {
+    // Chi goi nhanh nay tu catch cua import-folder-scan (quet that bai) -
+    // khong co ket qua hop le nao de import, nen luon disable.
+    container.hidden = true;
+    container.innerHTML = '';
+    el('import-confirm').disabled = true;
+    return;
+  }
+  const { matched, skipped, ignoredCount } = folderScanResult;
+  const parts = [];
+  parts.push(`<h3>Sẽ import (${matched.length})</h3>`);
+  if (matched.length === 0) {
+    parts.push('<div class="import-folder-preview-empty">Không có table nào để import.</div>');
+  } else {
+    for (const m of matched) {
+      parts.push(`<div class="import-folder-preview-row"><span class="table-name">${escapeHtml(m.className)}</span><span class="file-name">${escapeHtml(m.fileName)}</span></div>`);
+    }
+  }
+  if (skipped.length > 0) {
+    parts.push(`<h3>Bỏ qua - không có table (${skipped.length})</h3>`);
+    for (const s of skipped) {
+      parts.push(`<div class="import-folder-preview-row"><span class="table-name">${escapeHtml(s.tableNameGuess)}</span><span class="file-name">${escapeHtml(s.fileName)}</span></div>`);
+    }
+  }
+  if (ignoredCount > 0) {
+    parts.push(`<div class="import-folder-preview-note">${ignoredCount} file khác không đúng định dạng tên, đã bỏ qua.</div>`);
+  }
+  container.innerHTML = parts.join('');
+  container.hidden = false;
+  el('import-confirm').disabled = matched.length === 0;
+}
+
+function invalidateFolderScan() {
+  folderScanResult = null;
+  el('import-folder-preview').hidden = true;
+  el('import-folder-preview').innerHTML = '';
+  if (getCheckedRadioValue(IMPORT_SOURCE_IDS, 'file') === 'folder') {
+    el('import-confirm').disabled = true;
+  }
+}
+
+function applyImportSourceVisibility() {
+  const source = getCheckedRadioValue(IMPORT_SOURCE_IDS, 'file');
+  el('import-file-block').hidden = source !== 'file';
+  el('import-folder-block').hidden = source !== 'folder';
+  el('import-confirm').disabled = source === 'folder' && !(folderScanResult && folderScanResult.matched.length > 0);
+}
+
+document.querySelectorAll('input[name="import-source"]').forEach((radio) => {
+  radio.addEventListener('change', applyImportSourceVisibility);
+});
+
+el('import-folder-path').addEventListener('input', invalidateFolderScan);
+
+el('import-folder-scan').addEventListener('click', async () => {
+  const btn = el('import-folder-scan');
+  btn.disabled = true;
+  try {
+    const folderPath = el('import-folder-path').value.trim();
+    folderScanResult = await api('POST', '/api/import/folder/scan', { folderPath });
+    renderImportFolderPreview();
+  } catch (err) {
+    folderScanResult = null;
+    renderImportFolderPreview();
+    showError(`Quét thư mục thất bại: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // Browser (trình duyệt) không cho JS lấy đường dẫn tuyệt đối thật của file
 // chọn qua <input type="file"> (lý do bảo mật) - chỉ có tên file. Nên thay
@@ -107,6 +189,22 @@ el('import-data').addEventListener('click', () => {
   el('import-file-input').value = ''; // để chọn lại đúng file cũ vẫn bắn 'change'
   el(IMPORT_MODE_IDS.append).checked = true;
   el(IMPORT_MODE_IDS.overwrite).checked = false;
+  el(IMPORT_SOURCE_IDS.file).checked = true;
+  el(IMPORT_SOURCE_IDS.folder).checked = false;
+  el('import-folder-path').value = '';
+  invalidateFolderScan();
+  applyImportSourceVisibility();
+  el('import-overlay').hidden = false;
+});
+
+el('open-import-folder').addEventListener('click', () => {
+  el(IMPORT_MODE_IDS.append).checked = true;
+  el(IMPORT_MODE_IDS.overwrite).checked = false;
+  el(IMPORT_SOURCE_IDS.folder).checked = true;
+  el(IMPORT_SOURCE_IDS.file).checked = false;
+  el('import-folder-path').value = '';
+  invalidateFolderScan();
+  applyImportSourceVisibility();
   el('import-overlay').hidden = false;
 });
 
@@ -119,44 +217,94 @@ el('import-overlay').addEventListener('click', (e) => {
 });
 
 el('import-confirm').addEventListener('click', async () => {
-  if (!importFileContent) {
-    showError('Vui lòng chọn file cần import.');
+  const source = getCheckedRadioValue(IMPORT_SOURCE_IDS, 'file');
+  const mode = getCheckedRadioValue(IMPORT_MODE_IDS, 'append');
+
+  if (source === 'file') {
+    if (!importFileContent) {
+      showError('Vui lòng chọn file cần import.');
+      return;
+    }
+    const format = importFileFormat;
+    const nameMismatch = !fileNameMatchesTable(importFileName, state.currentClass);
+    const mismatchWarning = nameMismatch
+      ? `Tên file "${importFileName}" có vẻ KHÔNG khớp với table "${state.currentClass}" đang chọn. Vui lòng kiểm tra lại đúng file trước khi tiếp tục.`
+      : '';
+    // "Ghi đè" xoá toàn bộ dữ liệu hiện có trước khi import - đây là thao tác
+    // phá huỷ dữ liệu không thể hoàn tác trong tool này, nên bắt xác nhận
+    // thêm 1 lần nữa (giống Delete), thay vì chỉ dựa vào việc chọn đúng radio.
+    // Khi tên file không khớp table, nối thêm cảnh báo vào chính dialog này
+    // thay vì hiện thêm 1 dialog riêng.
+    if (mode === 'overwrite') {
+      let message = `"Ghi đè" sẽ XÓA TOÀN BỘ dữ liệu hiện có trong table "${state.currentClass}" trước khi import từ file. Bạn có chắc chắn muốn tiếp tục?`;
+      if (mismatchWarning) message += `\n\n${mismatchWarning}`;
+      const confirmed = await showConfirm(message);
+      if (!confirmed) return;
+    } else if (mismatchWarning) {
+      // "Thêm mới" bình thường không cần xác nhận gì thêm - chỉ hiện dialog
+      // xác nhận riêng khi phát hiện tên file không khớp table.
+      const confirmed = await showConfirm(`${mismatchWarning}\n\nBạn có chắc chắn muốn tiếp tục import không?`);
+      if (!confirmed) return;
+    }
+    const btn = el('import-confirm');
+    btn.disabled = true;
+    try {
+      const result = await api('POST', `/api/objects/${encodeURIComponent(state.currentClass)}/import`, { content: importFileContent, mode, format });
+      el('import-overlay').hidden = true;
+      await loadObjects();
+      refreshOneClassCount(state.currentClass);
+      const modeLabel = mode === 'overwrite' ? 'Ghi đè' : 'Thêm mới';
+      const skippedNote = result.skippedColumns.length
+        ? ` Đã bỏ qua ${result.skippedColumns.length} cột không có trong table: ${result.skippedColumns.join(', ')}.`
+        : '';
+      showToast(`Đã import ${result.insertedCount} record vào table "${state.currentClass}" (chế độ: ${modeLabel}).${skippedNote}`);
+    } catch (err) {
+      showError(`Import thất bại: ${err.message}`);
+    } finally {
+      btn.disabled = false;
+    }
     return;
   }
-  const mode = getCheckedRadioValue(IMPORT_MODE_IDS, 'append');
-  const format = importFileFormat;
-  const nameMismatch = !fileNameMatchesTable(importFileName, state.currentClass);
-  const mismatchWarning = nameMismatch
-    ? `Tên file "${importFileName}" có vẻ KHÔNG khớp với table "${state.currentClass}" đang chọn. Vui lòng kiểm tra lại đúng file trước khi tiếp tục.`
-    : '';
-  // "Ghi đè" xoá toàn bộ dữ liệu hiện có trước khi import - đây là thao tác
-  // phá huỷ dữ liệu không thể hoàn tác trong tool này, nên bắt xác nhận
-  // thêm 1 lần nữa (giống Delete), thay vì chỉ dựa vào việc chọn đúng radio.
-  // Khi tên file không khớp table, nối thêm cảnh báo vào chính dialog này
-  // thay vì hiện thêm 1 dialog riêng.
+
+  // source === 'folder' - import hang loat, khong phu thuoc state.currentClass
+  if (!folderScanResult || folderScanResult.matched.length === 0) {
+    showError('Vui lòng Quét thư mục và đảm bảo có ít nhất 1 table sẽ import.');
+    return;
+  }
+  const tableNames = folderScanResult.matched.map((m) => m.className);
   if (mode === 'overwrite') {
-    let message = `"Ghi đè" sẽ XÓA TOÀN BỘ dữ liệu hiện có trong table "${state.currentClass}" trước khi import từ file. Bạn có chắc chắn muốn tiếp tục?`;
-    if (mismatchWarning) message += `\n\n${mismatchWarning}`;
+    const message = `"Ghi đè" sẽ XÓA TOÀN BỘ dữ liệu hiện có trong ${tableNames.length} table sau trước khi import: ${tableNames.join(', ')}. Bạn có chắc chắn muốn tiếp tục?`;
     const confirmed = await showConfirm(message);
-    if (!confirmed) return;
-  } else if (mismatchWarning) {
-    // "Thêm mới" bình thường không cần xác nhận gì thêm - chỉ hiện dialog
-    // xác nhận riêng khi phát hiện tên file không khớp table.
-    const confirmed = await showConfirm(`${mismatchWarning}\n\nBạn có chắc chắn muốn tiếp tục import không?`);
     if (!confirmed) return;
   }
   const btn = el('import-confirm');
   btn.disabled = true;
   try {
-    const result = await api('POST', `/api/objects/${encodeURIComponent(state.currentClass)}/import`, { content: importFileContent, mode, format });
-    el('import-overlay').hidden = true;
-    await loadObjects();
-    refreshOneClassCount(state.currentClass);
+    const execResult = await api('POST', '/api/import/folder/execute', {
+      resolvedPath: folderScanResult.resolvedPath,
+      matched: folderScanResult.matched,
+      mode,
+    });
+    // Thay preview bang ket qua, KHONG tu dong dong modal - user tu xem xong
+    // roi bam Huy (tai dung nut cu) de dong, vi day la import hang loat
+    // nhieu table, can nhin ro table nao thanh cong/loi.
+    const rows = execResult.results.map((r) => {
+      const status = r.ok
+        ? `<span class="table-name">✓ ${r.insertedCount} record</span>`
+        : `<span class="table-name">✗ ${escapeHtml(r.error)}</span>`;
+      return `<div class="import-folder-result-row ${r.ok ? 'ok' : 'fail'}"><span class="table-name">${escapeHtml(r.className)}</span>${status}</div>`;
+    });
+    el('import-folder-preview').innerHTML = `<h3>Kết quả (${execResult.successCount} thành công / ${execResult.failCount} lỗi)</h3>${rows.join('')}`;
+    el('import-folder-preview').hidden = false;
+    folderScanResult = null;
+    el('import-confirm').disabled = true;
+
+    await loadClassCounts(state.schema);
+    if (tableNames.includes(state.currentClass)) {
+      await loadObjects();
+    }
     const modeLabel = mode === 'overwrite' ? 'Ghi đè' : 'Thêm mới';
-    const skippedNote = result.skippedColumns.length
-      ? ` Đã bỏ qua ${result.skippedColumns.length} cột không có trong table: ${result.skippedColumns.join(', ')}.`
-      : '';
-    showToast(`Đã import ${result.insertedCount} record vào table "${state.currentClass}" (chế độ: ${modeLabel}).${skippedNote}`);
+    showToast(`Đã import ${execResult.successCount}/${tableNames.length} table (chế độ: ${modeLabel}).`);
   } catch (err) {
     showError(`Import thất bại: ${err.message}`);
   } finally {

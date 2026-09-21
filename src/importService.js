@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const realmService = require('./realmService');
 const { toClientSchema, buildWriteValues } = require('./valueConversion');
 
@@ -247,4 +249,125 @@ function importMarkdown(className, markdownContent, mode) {
   return importParsedData(className, parseMarkdownTable(markdownContent), mode);
 }
 
-module.exports = { importCsv, importMarkdown, parseCsv, parseMarkdownTable };
+const DEFAULT_IMPORT_DIR = path.join(__dirname, '..', 'imports');
+
+// <tenTable>_<yyyymmdd>_<hhmmss>.<csv|md> - dung quy uoc exportService.js
+// dung khi Export (xem timestampForFilename trong exportService.js). Nhom 1
+// = ten table ung vien, nhom 2+3 ghep lai = khoa sap xep thoi gian.
+const FOLDER_FILE_PATTERN = /^(.+)_(\d{8})_(\d{6})\.(csv|md)$/i;
+
+function resolveImportFolderPath(folderPath) {
+  const trimmed = (folderPath || '').trim();
+  if (!trimmed) return DEFAULT_IMPORT_DIR;
+  return path.isAbsolute(trimmed) ? trimmed : path.join(__dirname, '..', trimmed);
+}
+
+function extToFormat(ext) {
+  return ext.toLowerCase() === 'md' ? 'markdown' : 'csv';
+}
+
+// Quet 1 thu muc (KHONG de quy vao thu muc con, bo qua file an bat dau bang
+// '.'), doi chieu ten file voi schema Realm dang mo, chon ra file MOI NHAT
+// cho moi table (khong phan biet duoi csv/md). Table rut ra tu ten file
+// nhung khong khop class nao trong schema -> xep vao skipped (khong loi).
+// File khong dung quy uoc dat ten -> dem vao ignoredCount, khong hien chi
+// tiet tung file.
+function scanImportFolder(folderPath) {
+  const resolvedPath = resolveImportFolderPath(folderPath);
+
+  let entries;
+  try {
+    entries = fs.readdirSync(resolvedPath, { withFileTypes: true });
+  } catch (e) {
+    const err = new Error(`Không đọc được thư mục "${resolvedPath}": ${e.message}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const schema = realmService.getSchema();
+  const schemaByLowerName = new Map(schema.map((s) => [s.name.toLowerCase(), s.name]));
+
+  const matchedByLowerName = new Map();
+  const skippedByLowerName = new Map();
+  let ignoredCount = 0;
+
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.name.startsWith('.')) continue;
+    const match = FOLDER_FILE_PATTERN.exec(entry.name);
+    if (!match) {
+      ignoredCount += 1;
+      continue;
+    }
+    const [, tableNameGuess, dateStr, timeStr, extRaw] = match;
+    const timestampKey = `${dateStr}${timeStr}`; // 14 ky tu so, sap chuoi = sap thoi gian
+    const timestamp = `${dateStr}_${timeStr}`;
+    const format = extToFormat(extRaw);
+    const lowerName = tableNameGuess.toLowerCase();
+    const className = schemaByLowerName.get(lowerName);
+
+    if (!className) {
+      const existing = skippedByLowerName.get(lowerName);
+      if (!existing || timestampKey > existing.timestampKey) {
+        skippedByLowerName.set(lowerName, { tableNameGuess, fileName: entry.name, timestamp, timestampKey });
+      }
+      continue;
+    }
+
+    const existing = matchedByLowerName.get(lowerName);
+    if (!existing || timestampKey > existing.timestampKey) {
+      matchedByLowerName.set(lowerName, { className, fileName: entry.name, format, timestamp, timestampKey });
+    }
+  }
+
+  const matched = Array.from(matchedByLowerName.values())
+    .map(({ className, fileName, format, timestamp }) => ({ className, fileName, format, timestamp }))
+    .sort((a, b) => a.className.localeCompare(b.className));
+  const skipped = Array.from(skippedByLowerName.values())
+    .map(({ tableNameGuess, fileName, timestamp }) => ({ tableNameGuess, fileName, timestamp }))
+    .sort((a, b) => a.tableNameGuess.localeCompare(b.tableNameGuess));
+
+  return { resolvedPath, matched, skipped, ignoredCount };
+}
+
+const FOLDER_IMPORT_HANDLERS = { csv: importCsv, markdown: importMarkdown };
+
+// Doc lai TUNG file trong `matched` (dung danh sach client da preview tu
+// scanImportFolder) roi import qua importCsv/importMarkdown nhu cu. 1 table
+// loi KHONG chan cac table con lai - gom ket qua tung table vao `results`.
+function executeImportFolder(resolvedPath, matched, mode) {
+  if (!VALID_MODES.has(mode)) {
+    const err = new Error(`Chế độ import "${mode}" không hợp lệ. Chỉ hỗ trợ: overwrite, append.`);
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!Array.isArray(matched) || matched.length === 0) {
+    const err = new Error('Không có table nào để import.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const results = [];
+  for (const item of matched) {
+    const { className, fileName, format } = item;
+    try {
+      const filePath = path.join(resolvedPath, fileName);
+      const content = fs.readFileSync(filePath, 'utf8');
+      const importFn = FOLDER_IMPORT_HANDLERS[format];
+      if (!importFn) {
+        throw new Error(`Format "${format}" không được hỗ trợ.`);
+      }
+      const result = importFn(className, content, mode);
+      results.push({ className, fileName, ok: true, ...result });
+    } catch (e) {
+      results.push({ className, fileName, ok: false, error: e.message });
+    }
+  }
+
+  const successCount = results.filter((r) => r.ok).length;
+  return { results, successCount, failCount: results.length - successCount };
+}
+
+module.exports = {
+  importCsv, importMarkdown, parseCsv, parseMarkdownTable,
+  scanImportFolder, executeImportFolder,
+};

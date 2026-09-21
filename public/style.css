@@ -748,3 +748,40 @@ tr.row-highlight { animation: row-highlight-fade 3s ease-in; }
   80% { transform: translateX(4px); }
 }
 #troll-quiz-card.shake { animation: troll-shake 0.4s ease; }
+
+/* ---------- Import folder (entry point sidebar + preview/ket qua) ---------- */
+.icon-btn-import { color: var(--import); }
+.icon-btn-import:hover { background: var(--import-soft); border-color: var(--import); box-shadow: 0 0 10px var(--import-border); }
+
+.file-picker input[type="text"] { flex: 1; min-width: 0; }
+
+.import-folder-preview {
+  margin-top: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.import-folder-preview h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin: 10px 0 4px;
+}
+.import-folder-preview h3:first-child { margin-top: 0; }
+.import-folder-preview-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.import-folder-preview-row .table-name { color: var(--text); font-weight: 500; }
+.import-folder-preview-row .file-name {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.import-folder-preview-empty { color: var(--text-muted); padding: 6px 0; }
+.import-folder-preview-note { color: var(--text-muted); font-size: 11px; margin-top: 8px; }
+.import-folder-result-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.import-folder-result-row.ok .table-name { color: var(--success); }
+.import-folder-result-row.fail .table-name { color: var(--danger); }

@@ -3,10 +3,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { buildFixtureRealm } = require('./fixtures/buildFixture');
 const realmService = require('../src/realmService');
 const { exportObjects } = require('../src/exportService');
-const { importCsv, importMarkdown, parseCsv, parseMarkdownTable } = require('../src/importService');
+const {
+  importCsv, importMarkdown, parseCsv, parseMarkdownTable,
+  scanImportFolder, executeImportFolder,
+} = require('../src/importService');
 
 test('parseCsv: quoted field co dau phay, xuong dong, va escape dau nhay kep', () => {
   const csv = 'id,name\n' + 'p1,"Alice, ""the great"""\n' + 'p2,"multi\nline"\n';
@@ -348,4 +353,214 @@ test('Round-trip: export mot table ra Markdown roi import lai (overwrite) phai r
   assert.equal(bob.name, 'Bob');
   assert.equal(bob.age, 25);
   assert.equal(bob.active, false);
+});
+
+function makeTempImportDir(files) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'realm-dev-tool-import-folder-'));
+  for (const [name, content] of Object.entries(files)) {
+    fs.writeFileSync(path.join(dir, name), content, 'utf8');
+  }
+  return dir;
+}
+
+test('scanImportFolder: nhieu file cung table, khac timestamp -> chon file MOI NHAT bat ke duoi csv/md', async (t) => {
+  const { filePath, encryptionKeyHex, dir } = await buildFixtureRealm();
+  t.after(() => {
+    realmService.closeRealm();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await realmService.openRealm(filePath, encryptionKeyHex);
+
+  const importDir = makeTempImportDir({
+    'Person_20260821_003537.md': '| id | name | age | active |\n| --- | --- | --- | --- |\n| p3 | Old | 1 | true |\n',
+    'Person_20260921_003537.md': '| id | name | age | active |\n| --- | --- | --- | --- |\n| p3 | Mid | 2 | true |\n',
+    'Person_20261021_003537.csv': 'id,name,age,active\np3,New,3,true\n',
+  });
+  t.after(() => fs.rmSync(importDir, { recursive: true, force: true }));
+
+  const scan = scanImportFolder(importDir);
+  assert.equal(scan.resolvedPath, importDir);
+  assert.equal(scan.matched.length, 1);
+  assert.equal(scan.matched[0].className, 'Person');
+  assert.equal(scan.matched[0].fileName, 'Person_20261021_003537.csv');
+  assert.equal(scan.matched[0].format, 'csv');
+  assert.equal(scan.matched[0].timestamp, '20261021_003537');
+  assert.deepEqual(scan.skipped, []);
+  assert.equal(scan.ignoredCount, 0);
+});
+
+test('scanImportFolder: ten table rut tu file khong khop class nao trong schema -> xep vao skipped, khong loi', async (t) => {
+  const { filePath, encryptionKeyHex, dir } = await buildFixtureRealm();
+  t.after(() => {
+    realmService.closeRealm();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await realmService.openRealm(filePath, encryptionKeyHex);
+
+  const importDir = makeTempImportDir({
+    'abc_20260821_003537.md': '| x |\n| --- |\n| 1 |\n',
+  });
+  t.after(() => fs.rmSync(importDir, { recursive: true, force: true }));
+
+  const scan = scanImportFolder(importDir);
+  assert.deepEqual(scan.matched, []);
+  assert.equal(scan.skipped.length, 1);
+  assert.equal(scan.skipped[0].tableNameGuess, 'abc');
+  assert.equal(scan.skipped[0].fileName, 'abc_20260821_003537.md');
+});
+
+test('scanImportFolder: khop table KHONG phan biet hoa/thuong, van dung dung ten class that tu schema', async (t) => {
+  const { filePath, encryptionKeyHex, dir } = await buildFixtureRealm();
+  t.after(() => {
+    realmService.closeRealm();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await realmService.openRealm(filePath, encryptionKeyHex);
+
+  const importDir = makeTempImportDir({
+    'person_20261021_003537.csv': 'id,name,age,active\np3,New,3,true\n',
+  });
+  t.after(() => fs.rmSync(importDir, { recursive: true, force: true }));
+
+  const scan = scanImportFolder(importDir);
+  assert.equal(scan.matched.length, 1);
+  assert.equal(scan.matched[0].className, 'Person', 'phai dung dung hoa/thuong cua class that (Person), khong phai "person" tu ten file');
+});
+
+test('scanImportFolder: file sai dinh dang ten (khong co timestamp, hoac sai duoi) -> dem vao ignoredCount, khong hien chi tiet', async (t) => {
+  const { filePath, encryptionKeyHex, dir } = await buildFixtureRealm();
+  t.after(() => {
+    realmService.closeRealm();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await realmService.openRealm(filePath, encryptionKeyHex);
+
+  const importDir = makeTempImportDir({
+    'readme.txt': 'khong phai file du lieu',
+    'Person.csv': 'id,name,age,active\np3,X,1,true\n', // thieu timestamp -> khong khop pattern
+  });
+  t.after(() => fs.rmSync(importDir, { recursive: true, force: true }));
+
+  const scan = scanImportFolder(importDir);
+  assert.deepEqual(scan.matched, []);
+  assert.deepEqual(scan.skipped, []);
+  assert.equal(scan.ignoredCount, 2);
+});
+
+test('scanImportFolder: thu muc rong -> matched/skipped rong, khong loi', async (t) => {
+  const { filePath, encryptionKeyHex, dir } = await buildFixtureRealm();
+  t.after(() => {
+    realmService.closeRealm();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await realmService.openRealm(filePath, encryptionKeyHex);
+
+  const importDir = makeTempImportDir({});
+  t.after(() => fs.rmSync(importDir, { recursive: true, force: true }));
+
+  const scan = scanImportFolder(importDir);
+  assert.deepEqual(scan.matched, []);
+  assert.deepEqual(scan.skipped, []);
+  assert.equal(scan.ignoredCount, 0);
+});
+
+test('scanImportFolder: thu muc khong ton tai -> bao loi ro rang', async (t) => {
+  const { filePath, encryptionKeyHex, dir } = await buildFixtureRealm();
+  t.after(() => {
+    realmService.closeRealm();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await realmService.openRealm(filePath, encryptionKeyHex);
+
+  const noSuchDir = path.join(os.tmpdir(), `khong-ton-tai-${Date.now()}`);
+  assert.throws(() => scanImportFolder(noSuchDir), /Không đọc được thư mục/);
+});
+
+test('scanImportFolder: khong truyen folderPath -> dung mac dinh thu muc "imports" o goc project', async (t) => {
+  const { filePath, encryptionKeyHex, dir } = await buildFixtureRealm();
+  t.after(() => {
+    realmService.closeRealm();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await realmService.openRealm(filePath, encryptionKeyHex);
+
+  const defaultDir = path.join(__dirname, '..', 'imports');
+  fs.mkdirSync(defaultDir, { recursive: true });
+  t.after(() => fs.rmSync(defaultDir, { recursive: true, force: true }));
+
+  const scan = scanImportFolder('');
+  assert.equal(scan.resolvedPath, defaultDir);
+});
+
+test('executeImportFolder: import nhieu table cung luc thanh cong', async (t) => {
+  const { filePath, encryptionKeyHex, dir } = await buildFixtureRealm();
+  t.after(() => {
+    realmService.closeRealm();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await realmService.openRealm(filePath, encryptionKeyHex);
+
+  const importDir = makeTempImportDir({
+    'Person_20261021_003537.csv': 'id,name,age,active\np9,Zed,50,true\n',
+    'Note_20261021_003537.md': '| title | body |\n| --- | --- |\n| Hi | There |\n',
+  });
+  t.after(() => fs.rmSync(importDir, { recursive: true, force: true }));
+
+  const scan = scanImportFolder(importDir);
+  assert.equal(scan.matched.length, 2);
+
+  const result = executeImportFolder(scan.resolvedPath, scan.matched, 'append');
+  assert.equal(result.successCount, 2);
+  assert.equal(result.failCount, 0);
+  const personResult = result.results.find((r) => r.className === 'Person');
+  assert.equal(personResult.ok, true);
+  assert.equal(personResult.insertedCount, 1);
+  const noteResult = result.results.find((r) => r.className === 'Note');
+  assert.equal(noteResult.ok, true);
+  assert.equal(noteResult.insertedCount, 1);
+
+  assert.ok(realmService.listObjects('Person', '').rows.some((r) => r.id === 'p9'));
+  assert.ok(realmService.listObjects('Note', '').rows.some((r) => r.title === 'Hi'));
+});
+
+test('executeImportFolder: 1 table loi (class khong ton tai) khong chan cac table con lai', async (t) => {
+  const { filePath, encryptionKeyHex, dir } = await buildFixtureRealm();
+  t.after(() => {
+    realmService.closeRealm();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await realmService.openRealm(filePath, encryptionKeyHex);
+
+  const importDir = makeTempImportDir({
+    'Person_20261021_003537.csv': 'id,name,age,active\np9,Zed,50,true\n',
+  });
+  t.after(() => fs.rmSync(importDir, { recursive: true, force: true }));
+
+  const matched = [
+    { className: 'Person', fileName: 'Person_20261021_003537.csv', format: 'csv' },
+    { className: 'KhongTonTai', fileName: 'Person_20261021_003537.csv', format: 'csv' },
+  ];
+  const result = executeImportFolder(importDir, matched, 'append');
+  assert.equal(result.successCount, 1);
+  assert.equal(result.failCount, 1);
+  const okResult = result.results.find((r) => r.className === 'Person');
+  assert.equal(okResult.ok, true);
+  const badResult = result.results.find((r) => r.className === 'KhongTonTai');
+  assert.equal(badResult.ok, false);
+  assert.match(badResult.error, /Không tìm thấy table/);
+});
+
+test('executeImportFolder: mode khong hop le hoac danh sach matched rong -> bao loi ro rang', async (t) => {
+  const { filePath, encryptionKeyHex, dir } = await buildFixtureRealm();
+  t.after(() => {
+    realmService.closeRealm();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await realmService.openRealm(filePath, encryptionKeyHex);
+
+  assert.throws(
+    () => executeImportFolder('/tmp', [{ className: 'Person', fileName: 'x.csv', format: 'csv' }], 'merge'),
+    /không hợp lệ/
+  );
+  assert.throws(() => executeImportFolder('/tmp', [], 'append'), /Không có table/);
 });

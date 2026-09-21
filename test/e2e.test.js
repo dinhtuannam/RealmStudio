@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { createApp } = require('../src/app');
 const realmService = require('../src/realmService');
@@ -145,6 +146,48 @@ test('HTTP API end-to-end: open, schema, CRUD qua HTTP that su', async (t) => {
   const deleteRes = await fetch(`${base}/api/objects/Person/p3`, { method: 'DELETE' });
   const deleteBody = await deleteRes.json();
   assert.equal(deleteBody.ok, true);
+
+  const importFolderDir = fs.mkdtempSync(path.join(os.tmpdir(), 'realm-dev-tool-e2e-import-folder-'));
+  fs.writeFileSync(path.join(importFolderDir, 'Person_20261021_003537.csv'), 'id,name,age,active\np8,Wendy,44,true\n', 'utf8');
+  fs.writeFileSync(path.join(importFolderDir, 'abc_20260821_003537.md'), '| x |\n| --- |\n| 1 |\n', 'utf8');
+  t.after(() => fs.rmSync(importFolderDir, { recursive: true, force: true }));
+
+  const scanRes = await fetch(`${base}/api/import/folder/scan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folderPath: importFolderDir }),
+  });
+  const scanBody = await scanRes.json();
+  assert.equal(scanRes.status, 200);
+  assert.equal(scanBody.ok, true);
+  assert.equal(scanBody.data.matched.length, 1);
+  assert.equal(scanBody.data.matched[0].className, 'Person');
+  assert.equal(scanBody.data.skipped.length, 1);
+  assert.equal(scanBody.data.skipped[0].tableNameGuess, 'abc');
+
+  const executeRes = await fetch(`${base}/api/import/folder/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resolvedPath: scanBody.data.resolvedPath, matched: scanBody.data.matched, mode: 'append' }),
+  });
+  const executeBody = await executeRes.json();
+  assert.equal(executeRes.status, 200);
+  assert.equal(executeBody.ok, true);
+  assert.equal(executeBody.data.successCount, 1);
+  assert.equal(executeBody.data.failCount, 0);
+
+  const afterFolderImportRes = await fetch(`${base}/api/objects/Person`);
+  const afterFolderImportBody = await afterFolderImportRes.json();
+  assert.ok(afterFolderImportBody.data.rows.some((r) => r.id === 'p8'), 'file import qua folder phai thay duoc trong bang Person');
+
+  const badFolderScanRes = await fetch(`${base}/api/import/folder/scan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folderPath: path.join(os.tmpdir(), `khong-ton-tai-${Date.now()}`) }),
+  });
+  const badFolderScanBody = await badFolderScanRes.json();
+  assert.equal(badFolderScanRes.status, 400);
+  assert.equal(badFolderScanBody.ok, false);
 
   const wrongOpenRes = await fetch(`${base}/api/open`, {
     method: 'POST',

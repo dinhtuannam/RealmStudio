@@ -68,6 +68,16 @@ router.post('/objects/:className/import', handle(async (req) => {
   return importFn(req.params.className, content, mode);
 }));
 
+router.post('/import/folder/scan', handle(async (req) => {
+  const { folderPath } = req.body || {};
+  return importService.scanImportFolder(folderPath);
+}));
+
+router.post('/import/folder/execute', handle(async (req) => {
+  const { resolvedPath, matched, mode } = req.body || {};
+  return importService.executeImportFolder(resolvedPath, matched, mode);
+}));
+
 router.post('/objects/:className', handle(async (req) => {
   return realmService.createObject(req.params.className, req.body || {});
 }));
