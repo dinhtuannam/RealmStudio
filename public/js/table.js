@@ -58,7 +58,9 @@ function renderTable() {
     th.textContent = prop.name;
     headRow.appendChild(th);
   }
-  headRow.appendChild(document.createElement('th'));
+  const actionTh = document.createElement('th');
+  actionTh.className = 'row-actions';
+  headRow.appendChild(actionTh);
   thead.appendChild(headRow);
   table.appendChild(thead);
 
@@ -104,6 +106,8 @@ function renderTable() {
     }
     const actionTd = document.createElement('td');
     actionTd.className = 'row-actions';
+    const actionGroup = document.createElement('div');
+    actionGroup.className = 'row-actions-group';
     const editBtn = document.createElement('button');
     editBtn.className = 'icon-btn icon-btn-edit';
     editBtn.title = 'Sửa';
@@ -119,9 +123,10 @@ function renderTable() {
     delBtn.title = 'Xóa';
     delBtn.innerHTML = ICONS.trash;
     delBtn.addEventListener('click', () => deleteRow(row));
-    actionTd.appendChild(editBtn);
-    actionTd.appendChild(dupBtn);
-    actionTd.appendChild(delBtn);
+    actionGroup.appendChild(editBtn);
+    actionGroup.appendChild(dupBtn);
+    actionGroup.appendChild(delBtn);
+    actionTd.appendChild(actionGroup);
     tr.appendChild(actionTd);
     tbody.appendChild(tr);
   }

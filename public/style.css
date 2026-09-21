@@ -427,8 +427,42 @@ th:first-child { border-top-left-radius: var(--radius); }
 th:last-child { border-top-right-radius: var(--radius); }
 tbody tr:hover { background: var(--bg-hover); }
 tbody tr:last-child td { border-bottom: none; }
-.row-actions { display: flex; gap: 4px; }
-.select-col { width: 1%; white-space: nowrap; text-align: center; }
+/* Dùng box-shadow (KHÔNG dùng border) để đánh dấu mép 2 cột sticky - đã
+   thử border-left/border-right trước, nhưng lúc position:sticky "tách" cell
+   khỏi flow bình thường, đường border đó không nối liền mượt với
+   border-bottom của cell kề bên, tạo khoảng hở ở góc (lỗi hiển thị đã gặp
+   thật). box-shadow vẽ đè lên như 1 lớp bóng liền mạch, không bị lỗi này. */
+.row-actions { position: sticky; right: 0; box-shadow: -3px 0 6px 0 rgba(0, 0, 0, 0.5); }
+/* display:flex đặt TRỰC TIẾP trên chính ô đang position:sticky bị lỗi hiển
+   thị (Chromium/WebKit): các icon-btn (flex children) vẽ lệch/nhân bóng mờ
+   so với vị trí sticky thực của ô, đặc biệt lộ rõ khi nền bán trong suốt
+   lúc hover (đã gặp thật). Tách flex layout ra 1 <div> bọc bên trong
+   (table.js: actionGroup) thay vì đặt chung với sticky trên chính <td> thì
+   hết lỗi. */
+.row-actions-group { display: flex; gap: 4px; }
+.select-col { width: 1%; white-space: nowrap; text-align: center; position: sticky; left: 0; box-shadow: 3px 0 6px 0 rgba(0, 0, 0, 0.5); }
+/* Nền đậm hơn hẳn --bg-panel (nền table) 1 bậc, để 2 cột sticky trông tách
+   biệt rõ khỏi phần dữ liệu đang cuộn qua bên dưới - không chỉ dựa vào
+   box-shadow. Hover đổi sang --accent-soft (cyan nhạt) thay vì chỉ đậm hơn
+   1 chút như các hàng khác, để rõ ràng cột này luôn "nổi" bất kể đang hover
+   hàng nào. Sticky cell không tự kế thừa nền từ <tr> khi tách khỏi flow lúc
+   cuộn nên phải gán tường minh, không thì nội dung cột khác sẽ "hiện xuyên
+   qua" phía sau khi cuộn ngang. */
+td.select-col, td.row-actions { z-index: 2; background: var(--bg-hover); }
+/* --accent-soft là rgba BÁN TRONG SUỐT (0,240,255,0.15) - dùng thẳng làm
+   background của 1 ô sticky sẽ để lộ nội dung cột khác đang cuộn "nằm dưới"
+   nó ra ngoài (đúng lỗi user gặp: chữ của row đè lên vùng action, CHỈ lúc
+   hover vì bình thường ô sticky dùng --bg-hover đục hoàn toàn). Vẽ chồng 2
+   lớp background NGAY TRÊN CHÍNH ô này (linear-gradient cùng 1 màu + màu
+   nền đục ở dưới) để trộn màu xảy ra NỘI BỘ trong ô, ra 1 màu đục hoàn
+   toàn - không còn gì "xuyên" qua được nữa. */
+tbody tr:hover td.select-col, tbody tr:hover td.row-actions {
+  background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--bg-hover);
+}
+/* z-index cao hơn td sticky (2) vì <th> sticky CẢ top LẪN left/right (ở góc)
+   - cần luôn nổi trên các dòng dữ liệu khi cuộn dọc, không bị <td> (sinh
+   sau trong DOM, cùng z-index sẽ thắng theo thứ tự DOM) đè lên. */
+th.select-col, th.row-actions { z-index: 3; background: var(--bg-hover); }
 
 /* accent-color chỉ đổi được màu lúc ĐÃ CHỌN - lúc CHƯA chọn, checkbox vẫn
    là ô vuông trắng/xám mặc định của OS, lạc quẻ hẳn với nền tối. Nên vẽ tay
